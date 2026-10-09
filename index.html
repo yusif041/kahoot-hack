@@ -14,21 +14,8 @@
   <div class="w-full max-w-3xl space-y-6">
     <header class="text-center">
       <h1 class="text-3xl font-bold text-blue-400">Gemini Web Screen Assistant</h1>
-      <p class="text-sm text-gray-400 mt-1">Capture screen, process via Gemini 3.5 Flash, and auto-click matching answer</p>
+      <p class="text-sm text-gray-400 mt-1">Multi-Key Rotation Assistant (Double Rate Limit: 30 RPM)</p>
     </header>
-
-    <!-- API Key Input -->
-    <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-md">
-      <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2" for="apiKey">
-        Gemini API Key
-      </label>
-      <input 
-        type="password" 
-        id="apiKey" 
-        placeholder="Enter your GEMINI_API_KEY..." 
-        class="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-200"
-      />
-    </div>
 
     <!-- Controls -->
     <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-md space-y-4">
@@ -69,13 +56,14 @@
       <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-md flex flex-col">
         <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Captured Frame</h2>
         <div class="flex-1 bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex items-center justify-center min-h-[220px]">
+          <video id="video" class="hidden max-h-full max-w-full object-contain" autoplay muted></video>
           <img id="previewImg" class="hidden max-h-full max-w-full object-contain" alt="Screen Capture Preview" />
           <span id="previewPlaceholder" class="text-gray-500 text-sm">No capture yet</span>
         </div>
       </div>
 
       <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-md flex flex-col">
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Gemini 3.5 Flash Answer</h2>
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Gemini 3.8 Flash Answer</h2>
         <div id="outputBox" class="flex-1 bg-gray-900 border border-gray-700 rounded-lg p-4 text-sm text-gray-300 overflow-y-auto max-h-[300px] whitespace-pre-wrap font-sans">
           Click 'Select Tab / Screen' to begin.
         </div>
@@ -83,19 +71,23 @@
     </div>
   </div>
 
-  <video id="video" class="hidden" autoplay></video>
   <canvas id="canvas" class="hidden"></canvas>
 
   <script>
-    let activeStream = null;
+    // Paste your Gemini API key(s) here. You can add one or multiple keys in the array for rotation.
+    const API_KEYS = [
+      "AQ.Ab8RN6LyJy6mlt6OQy3qn_Sb5dUG35jhP1DICcyHVb7iupkj9A",
+      "AQ.Ab8RN6K2hEQ-G20o1wD8nCiCImjXNUr2yGusnzqaRg96p6JewA"
+    ];
 
-    // Attach event listeners after DOM loads
+    let activeStream = null;
+    let currentKeyIndex = 0;
+
     document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("selectBtn").addEventListener("click", selectAndCapture);
       document.getElementById("resendBtn").addEventListener("click", captureCurrentFrame);
     });
 
-    // Hotkey listener (Space or Enter to re-capture)
     window.addEventListener("keydown", (e) => {
       const activeElement = document.activeElement;
       const isInput = activeElement && (activeElement.tagName === "INPUT" || activeElement.tagName === "TEXTAREA");
@@ -109,17 +101,27 @@
       }
     });
 
+    function getNextApiKey() {
+      const keys = API_KEYS.map(k => k.trim()).filter(k => k.length > 0 && !k.startsWith("YOUR_GEMINI_API_KEY"));
+
+      if (keys.length === 0) return null;
+
+      const selectedKey = keys[currentKeyIndex % keys.length];
+      currentKeyIndex++;
+      return { key: selectedKey, index: (currentKeyIndex - 1) % keys.length + 1, total: keys.length };
+    }
+
     async function selectAndCapture() {
-      const apiKey = document.getElementById("apiKey").value.trim();
+      const keyObj = getNextApiKey();
       const outputBox = document.getElementById("outputBox");
 
-      if (!apiKey) {
-        outputBox.innerText = "Error: Please enter your Gemini API Key above.";
+      if (!keyObj) {
+        outputBox.innerText = "Error: Please configure at least one valid API Key in the API_KEYS array inside the script.";
         return;
       }
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-        outputBox.innerText = "Error: Screen capture API (getDisplayMedia) is not available. Ensure you are on HTTPS and using Chrome, Edge, or Brave on desktop.";
+        outputBox.innerText = "Error: Screen capture API is not available. Ensure you are on HTTPS and using Chrome, Edge, or Brave on desktop.";
         return;
       }
 
@@ -143,8 +145,11 @@
         const video = document.getElementById("video");
         video.srcObject = activeStream;
 
+        await video.play();
         await new Promise((resolve) => {
-          video.onloadedmetadata = () => resolve();
+          video.onplaying = () => {
+            requestAnimationFrame(() => resolve());
+          };
         });
 
         document.getElementById("resendBtn").disabled = false;
@@ -160,15 +165,15 @@
     }
 
     async function captureCurrentFrame() {
-      const apiKey = document.getElementById("apiKey").value.trim();
+      const keyObj = getNextApiKey();
       const userPrompt = document.getElementById("userPrompt").value.trim();
       const outputBox = document.getElementById("outputBox");
       const previewImg = document.getElementById("previewImg");
       const previewPlaceholder = document.getElementById("previewPlaceholder");
       const video = document.getElementById("video");
 
-      if (!apiKey) {
-        outputBox.innerText = "Error: Please enter your Gemini API Key above.";
+      if (!keyObj) {
+        outputBox.innerText = "Error: Please configure at least one valid API Key in the API_KEYS array inside the script.";
         return;
       }
 
@@ -179,7 +184,7 @@
       }
 
       try {
-        outputBox.innerText = "Capturing current frame...";
+        outputBox.innerText = `Capturing frame (Using API Key #${keyObj.index})...`;
 
         const canvas = document.getElementById("canvas");
         canvas.width = video.videoWidth;
@@ -194,18 +199,16 @@
         previewImg.classList.remove("hidden");
         previewPlaceholder.classList.add("hidden");
 
-        outputBox.innerText = "Analyzing with Gemini 3.5 Flash...";
-        await callGeminiApi(apiKey, base64Clean, userPrompt);
+        await callGeminiApi(keyObj.key, keyObj.index, base64Clean, userPrompt);
 
       } catch (err) {
         outputBox.innerText = "Error capturing frame: " + err.message;
       }
     }
 
-    async function callGeminiApi(apiKey, base64Image, promptText) {
+    async function callGeminiApi(apiKey, keyNum, base64Image, promptText, retryCount = 0) {
       const outputBox = document.getElementById("outputBox");
       
-      // Explicitly configured for gemini-3.5-flash
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
       const requestBody = {
@@ -237,6 +240,13 @@
 
         const data = await response.json();
 
+        // If rate limited, auto-fallback/retry
+        if (response.status === 429 && retryCount < 3) {
+          outputBox.innerText = `Key #${keyNum} hit rate limit. Trying rotation key...`;
+          const nextKeyObj = getNextApiKey();
+          return callGeminiApi(nextKeyObj.key, nextKeyObj.index, base64Image, promptText, retryCount + 1);
+        }
+
         if (!response.ok) {
           throw new Error(data.error?.message || "Failed to generate content.");
         }
@@ -245,7 +255,6 @@
         if (reply) {
           const cleanAnswer = reply.trim();
           outputBox.innerText = cleanAnswer;
-          
           autoClickMatchingElement(cleanAnswer);
         } else {
           outputBox.innerText = "No textual response received from Gemini.";
