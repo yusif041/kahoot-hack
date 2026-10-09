@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemini Web Screen Assistant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+    }
+  </script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col items-center p-6">
+
+  <div class="w-full max-w-3xl space-y-6">
+    <!-- Header -->
+    <header class="text-center">
+      <h1 class="text-3xl font-bold text-blue-400">Gemini Web Screen Assistant</h1>
+      <p class="text-sm text-gray-400 mt-1">Select a tab, window, or screen and send a snapshot to Gemini</p>
+    </header>
+
+    <!-- API Key Input -->
+    <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-md">
+      <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2" for="apiKey">
+        Gemini API Key
+      </label>
+      <input 
+        type="password" 
+        id="apiKey" 
+        placeholder="Enter your GEMINI_API_KEY..." 
+        class="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-200"
+      />
+    </div>
+
+    <!-- Controls -->
+    <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-md space-y-4">
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2" for="userPrompt">
+          Prompt
+        </label>
+        <input 
+          type="text" 
+          id="userPrompt" 
+          value="Analyze this screen capture and explain the key information clearly." 
+          class="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-200"
+        />
+      </div>
+
+      <div class="flex gap-3">
+        <button 
+          id="captureBtn" 
+          onclick="startCapture()"
+          class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+          Select Tab / Screen & Analyze
+        </button>
+      </div>
+    </div>
+
+    <!-- Screen Preview & Output Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Image Preview -->
+      <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-md flex flex-col">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Captured Frame</h2>
+        <div class="flex-1 bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex items-center justify-center min-h-[220px]">
+          <img id="previewImg" class="hidden max-h-full max-w-full object-contain" alt="Screen Capture Preview" />
+          <span id="previewPlaceholder" class="text-gray-500 text-sm">No capture yet</span>
+        </div>
+      </div>
+
+      <!-- Analysis Output -->
+      <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-md flex flex-col">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Gemini Response</h2>
+        <div id="outputBox" class="flex-1 bg-gray-900 border border-gray-700 rounded-lg p-4 text-sm text-gray-300 overflow-y-auto max-h-[300px] whitespace-pre-wrap font-sans">
+          Click 'Select Tab / Screen & Analyze' to get started.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden elements for capture handling -->
+  <video id="video" class="hidden" autoplay></video>
+  <canvas id="canvas" class="hidden"></canvas>
+
+  <script>
+    async function startCapture() {
+      const apiKey = document.getElementById("apiKey").value.trim();
+      const userPrompt = document.getElementById("userPrompt").value.trim();
+      const outputBox = document.getElementById("outputBox");
+      const previewImg = document.getElementById("previewImg");
+      const previewPlaceholder = document.getElementById("previewPlaceholder");
+
+      if (!apiKey) {
+        outputBox.innerText = "Error: Please enter your Gemini API Key above.";
+        return;
+      }
+
+      try {
+        outputBox.innerText = "Waiting for screen selection...";
+
+        // Request screen share (triggers browser permissions modal)
+        const mediaStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { displaySurface: "browser" }, // prefers browser tab selection
+          audio: false
+        });
+
+        outputBox.innerText = "Capturing screen frame...";
+
+        const video = document.getElementById("video");
+        video.srcObject = mediaStream;
+
+        // Wait until video dimensions are loaded
+        await new Promise((resolve) => {
+          video.onloadedmetadata = () => resolve();
+        });
+
+        // Draw video frame onto hidden canvas
+        const canvas = document.getElementById("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Stop the media stream immediately after capturing one frame
+        mediaStream.getTracks().forEach(track => track.stop());
+
+        // Export image as base64 JPEG
+        const base64Data = canvas.toDataURL("image/jpeg", 0.85);
+        const base64Clean = base64Data.replace(/^data:image\/jpeg;base64,/, "");
+
+        // Show image in preview box
+        previewImg.src = base64Data;
+        previewImg.classList.remove("hidden");
+        previewPlaceholder.classList.add("hidden");
+
+        // Send to Gemini REST API
+        outputBox.innerText = "Sending captured frame to Gemini...";
+        await callGeminiApi(apiKey, base64Clean, userPrompt);
+
+      } catch (err) {
+        if (err.name === "NotAllowedError") {
+          outputBox.innerText = "Capture cancelled or permission denied.";
+        } else {
+          outputBox.innerText = "Error: " + err.message;
+        }
+      }
+    }
+
+    async function callGeminiApi(apiKey, base64Image, promptText) {
+      const outputBox = document.getElementById("outputBox");
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+      const requestBody = {
+        contents: [
+          {
+            parts: [
+              {
+                inline_data: {
+                  mime_type: "image/jpeg",
+                  data: base64Image
+                }
+              },
+              {
+                text: promptText || "Analyze this image and explain the key information clearly."
+              }
+            ]
+          }
+        ]
+      };
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error?.message || "Failed to generate content.");
+        }
+
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (reply) {
+          outputBox.innerText = reply;
+        } else {
+          outputBox.innerText = "No textual response received from Gemini.";
+        }
+      } catch (err) {
+        outputBox.innerText = "API Error: " + err.message;
+      }
+    }
+  </script>
+</body>
+</html>
