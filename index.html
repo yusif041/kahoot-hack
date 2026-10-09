@@ -3,21 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gemini Web Screen Assistant</title>
+  <title>Gemini Web Screen Assistant & Auto-Clicker</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = {
-      darkMode: 'class',
-    }
+    tailwind.config = { darkMode: 'class' }
   </script>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col items-center p-6">
 
   <div class="w-full max-w-3xl space-y-6">
-    <!-- Header -->
     <header class="text-center">
       <h1 class="text-3xl font-bold text-blue-400">Gemini Web Screen Assistant</h1>
-      <p class="text-sm text-gray-400 mt-1">Select a tab/screen once, then instantly send snapshots to Gemini</p>
+      <p class="text-sm text-gray-400 mt-1">Capture screen, process via Gemini 3.5 Flash, and auto-click matching answer</p>
     </header>
 
     <!-- API Key Input -->
@@ -48,32 +45,27 @@
       </div>
 
       <div class="flex flex-col sm:flex-row gap-3">
-        <!-- Button 1: Select Screen & Capture -->
         <button 
           id="selectBtn" 
           onclick="selectAndCapture()"
           class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
           Select Tab / Screen
         </button>
 
-        <!-- Button 2: Send Again (Disabled until screen is picked) -->
         <button 
           id="resendBtn" 
           onclick="captureCurrentFrame()"
           disabled
           class="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-          Take & Send Again
+          Take & Send Again (Space / Enter)
         </button>
       </div>
     </div>
 
     <!-- Screen Preview & Output Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- Image Preview -->
       <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-md flex flex-col">
         <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Captured Frame</h2>
         <div class="flex-1 bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex items-center justify-center min-h-[220px]">
@@ -82,9 +74,8 @@
         </div>
       </div>
 
-      <!-- Analysis Output -->
       <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-md flex flex-col">
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Gemini Answer</h2>
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Gemini 3.5 Flash Answer</h2>
         <div id="outputBox" class="flex-1 bg-gray-900 border border-gray-700 rounded-lg p-4 text-sm text-gray-300 overflow-y-auto max-h-[300px] whitespace-pre-wrap font-sans">
           Click 'Select Tab / Screen' to begin.
         </div>
@@ -92,12 +83,25 @@
     </div>
   </div>
 
-  <!-- Hidden elements for capture handling -->
   <video id="video" class="hidden" autoplay></video>
   <canvas id="canvas" class="hidden"></canvas>
 
   <script>
     let activeStream = null;
+
+    // Hotkey listener (Space or Enter to re-capture)
+    window.addEventListener("keydown", (e) => {
+      const activeElement = document.activeElement;
+      const isInput = activeElement && (activeElement.tagName === "INPUT" || activeElement.tagName === "TEXTAREA");
+      
+      if (!isInput && (e.code === "Space" || e.code === "Enter")) {
+        e.preventDefault();
+        const resendBtn = document.getElementById("resendBtn");
+        if (!resendBtn.disabled) {
+          captureCurrentFrame();
+        }
+      }
+    });
 
     async function selectAndCapture() {
       const apiKey = document.getElementById("apiKey").value.trim();
@@ -111,18 +115,15 @@
       try {
         outputBox.innerText = "Waiting for screen selection...";
 
-        // Stop any previous active screen share stream
         if (activeStream) {
           activeStream.getTracks().forEach(track => track.stop());
         }
 
-        // Request screen share stream from browser
         activeStream = await navigator.mediaDevices.getDisplayMedia({
           video: { displaySurface: "browser" },
           audio: false
         });
 
-        // Listen if the user stops sharing manually from the browser bar
         activeStream.getVideoTracks()[0].onended = () => {
           document.getElementById("resendBtn").disabled = true;
           outputBox.innerText = "Screen share stopped. Click 'Select Tab / Screen' to select again.";
@@ -131,15 +132,11 @@
         const video = document.getElementById("video");
         video.srcObject = activeStream;
 
-        // Wait until video metadata is loaded
         await new Promise((resolve) => {
           video.onloadedmetadata = () => resolve();
         });
 
-        // Enable the "Take & Send Again" button
         document.getElementById("resendBtn").disabled = false;
-
-        // Immediately capture the first frame
         await captureCurrentFrame();
 
       } catch (err) {
@@ -165,7 +162,7 @@
       }
 
       if (!activeStream || !activeStream.active) {
-        outputBox.innerText = "No active screen stream. Please click 'Select Tab / Screen' first.";
+        outputBox.innerText = "No active screen stream. Click 'Select Tab / Screen' first.";
         document.getElementById("resendBtn").disabled = true;
         return;
       }
@@ -173,31 +170,23 @@
       try {
         outputBox.innerText = "Capturing current frame...";
 
-        // Draw live video frame to hidden canvas
         const canvas = document.getElementById("canvas");
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // Export as base64 JPEG image
         const base64Data = canvas.toDataURL("image/jpeg", 0.85);
         const base64Clean = base64Data.replace(/^data:image\/jpeg;base64,/, "");
 
-        // Show captured frame preview
         previewImg.src = base64Data;
         previewImg.classList.remove("hidden");
         previewPlaceholder.classList.add("hidden");
 
-        // Send frame to Gemini API
-        outputBox.innerText = "Analyzing...";
+        outputBox.innerText = "Analyzing with Gemini 3.5 Flash...";
         await callGeminiApi(apiKey, base64Clean, userPrompt);
 
       } catch (err) {
         outputBox.innerText = "Error capturing frame: " + err.message;
       }
     }
-
-    async function callGeminiApi(apiKey, base64Image, promptText) {
-      const outputBox = document.getElementById("outputBox");
-      const endpoint = `
