@@ -47,7 +47,7 @@
       <div class="flex flex-col sm:flex-row gap-3">
         <button 
           id="selectBtn" 
-          onclick="selectAndCapture()"
+          type="button"
           class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           Select Tab / Screen
@@ -55,7 +55,7 @@
 
         <button 
           id="resendBtn" 
-          onclick="captureCurrentFrame()"
+          type="button"
           disabled
           class="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
@@ -89,6 +89,12 @@
   <script>
     let activeStream = null;
 
+    // Attach event listeners after DOM loads
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("selectBtn").addEventListener("click", selectAndCapture);
+      document.getElementById("resendBtn").addEventListener("click", captureCurrentFrame);
+    });
+
     // Hotkey listener (Space or Enter to re-capture)
     window.addEventListener("keydown", (e) => {
       const activeElement = document.activeElement;
@@ -109,6 +115,11 @@
 
       if (!apiKey) {
         outputBox.innerText = "Error: Please enter your Gemini API Key above.";
+        return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        outputBox.innerText = "Error: Screen capture API (getDisplayMedia) is not available. Ensure you are on HTTPS and using Chrome, Edge, or Brave on desktop.";
         return;
       }
 
@@ -190,3 +201,102 @@
         outputBox.innerText = "Error capturing frame: " + err.message;
       }
     }
+
+    async function callGeminiApi(apiKey, base64Image, promptText) {
+      const outputBox = document.getElementById("outputBox");
+      
+      // Explicitly configured for gemini-3.5-flash
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+
+      const requestBody = {
+        contents: [
+          {
+            parts: [
+              {
+                inline_data: {
+                  mime_type: "image/jpeg",
+                  data: base64Image
+                }
+              },
+              {
+                text: promptText
+              }
+            ]
+          }
+        ]
+      };
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error?.message || "Failed to generate content.");
+        }
+
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (reply) {
+          const cleanAnswer = reply.trim();
+          outputBox.innerText = cleanAnswer;
+          
+          autoClickMatchingElement(cleanAnswer);
+        } else {
+          outputBox.innerText = "No textual response received from Gemini.";
+        }
+      } catch (err) {
+        outputBox.innerText = "API Error: " + err.message;
+      }
+    }
+
+    function autoClickMatchingElement(targetText) {
+      if (!targetText) return;
+
+      const outputBox = document.getElementById("outputBox");
+      const normalizedTarget = targetText.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      const elements = Array.from(document.querySelectorAll("button, label, input[type='radio'], input[type='checkbox'], .option, .choice, [role='button']"));
+
+      let bestMatch = null;
+      let highestScore = -1;
+
+      elements.forEach(el => {
+        if (el.closest('.w-full.max-w-3xl')) return;
+
+        const textContent = (el.innerText || el.value || "").trim();
+        const normalizedElText = textContent.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        if (!normalizedElText) return;
+
+        if (normalizedElText === normalizedTarget) {
+          highestScore = 100;
+          bestMatch = el;
+          return;
+        }
+
+        if (normalizedElText.includes(normalizedTarget) || normalizedTarget.includes(normalizedElText)) {
+          const score = Math.min(normalizedElText.length, normalizedTarget.length) / Math.max(normalizedElText.length, normalizedTarget.length) * 80;
+          if (score > highestScore) {
+            highestScore = score;
+            bestMatch = el;
+          }
+        }
+      });
+
+      if (bestMatch && highestScore > 30) {
+        bestMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        bestMatch.click();
+        outputBox.innerText += `\n\n[Auto-Clicker]: Clicked matching element ("${(bestMatch.innerText || bestMatch.value || '').trim()}")`;
+      } else {
+        outputBox.innerText += `\n\n[Auto-Clicker]: No matching DOM element found on current page.`;
+      }
+    }
+  </script>
+</body>
+</html>
